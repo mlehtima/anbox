@@ -25,7 +25,7 @@ namespace anbox {
 namespace dbus {
 namespace sdbus {
 namespace vtable {
-constexpr sd_bus_vtable start(uint64_t flags)
+const sd_bus_vtable start(uint64_t flags)
 {
   sd_bus_vtable v{};
   v.type = _SD_BUS_VTABLE_START;
@@ -35,14 +35,14 @@ constexpr sd_bus_vtable start(uint64_t flags)
   return v;
 }
 
-constexpr sd_bus_vtable end() {
+const sd_bus_vtable end() {
   sd_bus_vtable v{};
   v.type = _SD_BUS_VTABLE_END;
 
   return v;
 }
 
-constexpr sd_bus_vtable method_o(const char* member, const char* signature,
+const sd_bus_vtable method_o(const char* member, const char* signature,
                                  const char* result,
                                  sd_bus_message_handler_t handler, size_t offset,
                                  uint64_t flags) {
@@ -54,13 +54,13 @@ constexpr sd_bus_vtable method_o(const char* member, const char* signature,
   return v;
 }
 
-constexpr sd_bus_vtable method(const char* member, const char* signature,
+const sd_bus_vtable method(const char* member, const char* signature,
                                const char* result, sd_bus_message_handler_t handler,
                                uint64_t flags) {
     return method_o(member, signature, result, handler, 0, flags);
 }
 
-constexpr sd_bus_vtable signal(const char* member, const char* signature, uint64_t flags) {
+const sd_bus_vtable signal(const char* member, const char* signature, uint64_t flags) {
   sd_bus_vtable v{};
   v.type = _SD_BUS_VTABLE_SIGNAL;
   v.flags = flags;
@@ -69,7 +69,7 @@ constexpr sd_bus_vtable signal(const char* member, const char* signature, uint64
   return v;
 }
 
-constexpr sd_bus_vtable property(const char* member, const char* signature,
+const sd_bus_vtable property(const char* member, const char* signature,
                                  sd_bus_property_get_t get,
                                  uint64_t flags) {
   sd_bus_vtable v{};
@@ -80,7 +80,7 @@ constexpr sd_bus_vtable property(const char* member, const char* signature,
   return v;
 }
 
-constexpr sd_bus_vtable property(const char* member, const char* signature,
+const sd_bus_vtable property(const char* member, const char* signature,
                                  sd_bus_property_get_t get,
                                  sd_bus_property_set_t set,
                                  uint64_t flags) {
@@ -92,7 +92,7 @@ constexpr sd_bus_vtable property(const char* member, const char* signature,
   return v;
 }
 
-constexpr sd_bus_vtable property_o(const char* member, const char* signature,
+const sd_bus_vtable property_o(const char* member, const char* signature,
                                    size_t offset, uint64_t flags) {
   sd_bus_vtable v{};
   v.type = _SD_BUS_VTABLE_PROPERTY;
@@ -102,7 +102,7 @@ constexpr sd_bus_vtable property_o(const char* member, const char* signature,
   return v;
 }
 
-constexpr sd_bus_vtable property_o(const char* member, const char* signature,
+const sd_bus_vtable property_o(const char* member, const char* signature,
                                    sd_bus_property_set_t set, size_t offset,
                                    uint64_t flags)
 {
