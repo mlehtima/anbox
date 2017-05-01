@@ -83,6 +83,18 @@ endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DMESA_EGL_NO_X11_HEADERS")
 
+option(USE_HEADLESS "Use Headless Graphics Backend instead of Android EmuGL" OFF)
+if(USE_HEADLESS)
+  pkg_check_modules(WAYLAND_CLIENT wayland-client REQUIRED)
+  pkg_check_modules(WAYLAND_EGL wayland-egl REQUIRED)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_HEADLESS -DWAYLAND_SUPPORT")
+else(USE_HEADLESS)
+  pkg_check_modules(WAYLAND_CLIENT wayland-client)
+  pkg_check_modules(WAYLAND_EGL wayland-egl)
+  if (WAYLANDCLIENT_FOUND)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWAYLAND_SUPPORT")
+  endif()
+endif(USE_HEADLESS)
 #####################################################################
 # Enable code coverage calculation with gcov/gcovr/lcov
 # Usage:
