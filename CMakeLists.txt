@@ -73,6 +73,18 @@ if (MIRCLIENT_FOUND)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DMIR_SUPPORT")
 endif()
 
+option(USE_SFDROID "Use SFDroid Graphics Backend instead of Android EmuGL" OFF)
+if(USE_SFDROID)
+  pkg_check_modules(WAYLAND_CLIENT wayland-client REQUIRED)
+  pkg_check_modules(WAYLAND_EGL wayland-egl REQUIRED)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_SFDROID -DWAYLAND_SUPPORT")
+else(USE_SFDROID)
+  pkg_check_modules(WAYLAND_CLIENT wayland-client)
+  pkg_check_modules(WAYLAND_EGL wayland-egl)
+  if (WAYLANDCLIENT_FOUND)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWAYLAND_SUPPORT")
+  endif()
+endif(USE_SFDROID)
 #####################################################################
 # Enable code coverage calculation with gcov/gcovr/lcov
 # Usage:

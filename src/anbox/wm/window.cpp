@@ -16,7 +16,11 @@
  */
 
 #include "anbox/wm/window.h"
+#ifdef USE_SFDROID
+#include "anbox/graphics/sfdroid/Renderer.h"
+#else
 #include "anbox/graphics/emugl/Renderer.h"
+#endif
 #include "anbox/logger.h"
 
 namespace anbox {
@@ -44,12 +48,20 @@ graphics::Rect Window::frame() const { return frame_; }
 
 EGLNativeWindowType Window::native_handle() const { return 0; }
 
+void *Window::native_surface() const { return 0; }
+
+EGLNativeDisplayType Window::native_display() const { return 0; }
+
 std::string Window::title() const { return title_; }
 
 bool Window::attach() {
   if (!renderer_)
     return false;
+#ifdef USE_SFDROID
+  attached_ = renderer_->createNativeWindow(native_handle(), native_surface(), native_display());
+#else
   attached_ = renderer_->createNativeWindow(native_handle());
+#endif
   return attached_;
 }
 

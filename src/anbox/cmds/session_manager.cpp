@@ -32,7 +32,6 @@
 #include "anbox/config.h"
 #include "anbox/container/client.h"
 #include "anbox/dbus/skeleton/service.h"
-#include "anbox/graphics/gl_renderer_server.h"
 #include "anbox/input/manager.h"
 #include "anbox/logger.h"
 #include "anbox/network/published_socket_connector.h"
@@ -47,6 +46,8 @@
 #include "external/xdg/xdg.h"
 
 #include <sys/prctl.h>
+
+using namespace std;
 
 #include <core/dbus/asio/executor.h>
 #include <core/dbus/bus.h>
@@ -68,6 +69,7 @@ class NullConnectionCreator : public anbox::network::ConnectionCreator<
   }
 };
 
+#ifndef USE_SFDROID
 std::istream& operator>>(std::istream& in, anbox::graphics::GLRendererServer::Config::Driver& driver) {
   std::string str(std::istreambuf_iterator<char>(in), {});
   if (str.empty() || str == "translator")
@@ -78,6 +80,7 @@ std::istream& operator>>(std::istream& in, anbox::graphics::GLRendererServer::Co
    BOOST_THROW_EXCEPTION(std::runtime_error("Invalid GLES driver value provided"));
   return in;
 }
+#endif
 }
 
 anbox::cmds::SessionManager::BusFactory anbox::cmds::SessionManager::session_bus_factory() {
@@ -97,9 +100,11 @@ anbox::cmds::SessionManager::SessionManager(const BusFactory &bus_factory)
   flag(cli::make_flag(cli::Name{"desktop_file_hint"},
                       cli::Description{"Desktop file hint for QtMir/Unity8"},
                       desktop_file_hint_));
+#ifndef USE_SFDROID
   flag(cli::make_flag(cli::Name{"gles-driver"},
                       cli::Description{"Which GLES driver to use. Possible values are 'host' or'translator'"},
                       gles_driver_));
+#endif
   flag(cli::make_flag(cli::Name{"single-window"},
                       cli::Description{"Start in single window mode."},
                       single_window_));
@@ -118,13 +123,6 @@ anbox::cmds::SessionManager::SessionManager(const BusFactory &bus_factory)
     if (!fs::exists("/dev/binder") || !fs::exists("/dev/ashmem")) {
       ERROR("Failed to start as either binder or ashmem kernel drivers are not loaded");
       return EXIT_FAILURE;
-    }
-
-    // If we're running with the properietary nvidia driver we always
-    // use the host EGL driver as our translation doesn't work here.
-    if (fs::exists("/dev/nvidiactl")) {
-      INFO("Detected properietary nvidia driver; forcing use of the host EGL driver.");
-      gles_driver_ = graphics::GLRendererServer::Config::Driver::Host;
     }
 
     utils::ensure_paths({
@@ -169,18 +167,33 @@ anbox::cmds::SessionManager::SessionManager(const BusFactory &bus_factory)
       window_manager = std::make_shared<wm::SingleWindowManager>(policy, display_frame, app_db);
     else
       window_manager = std::make_shared<wm::MultiWindowManager>(policy, android_api_stub, app_db);
+    policy->set_window_manager(window_manager);
+
+    auto audio_server = std::make_shared<audio::Server>(rt, policy);
+    const auto socket_path = SystemConfiguration::instance().socket_dir();
+
+#ifdef USE_SFDROID
+    auto sfdroid_server = std::make_shared<graphics::SFDroidRendererServer>(socket_path, window_manager, single_window_);
+    policy->set_renderer(sfdroid_server->renderer());
+
+    // The qemu pipe is used as a very fast communication channel between guest
+    // and host for things like the GLES emulation/translation, the RIL or ADB.
+    auto qemu_pipe_connector =
+        std::make_shared<network::PublishedSocketConnector>(
+            utils::string_format("%s/qemu_pipe", socket_path), rt,
+            std::make_shared<qemu::PipeConnectionCreator>(sfdroid_server->renderer(), rt));
+#else
+    // If we're running with the properietary nvidia driver we always
+    // use the host EGL driver as our translation doesn't work here.
+    if (fs::exists("/dev/nvidiactl")) {
+      INFO("Detected properietary nvidia driver; forcing use of the host EGL driver.");
+      gles_driver_ = graphics::GLRendererServer::Config::Driver::Host;
+    }
 
     auto gl_server = std::make_shared<graphics::GLRendererServer>(
           graphics::GLRendererServer::Config{gles_driver_, single_window_}, window_manager);
 
-    policy->set_window_manager(window_manager);
     policy->set_renderer(gl_server->renderer());
-
-    window_manager->setup();
-
-    auto audio_server = std::make_shared<audio::Server>(rt, policy);
-
-    const auto socket_path = SystemConfiguration::instance().socket_dir();
 
     // The qemu pipe is used as a very fast communication channel between guest
     // and host for things like the GLES emulation/translation, the RIL or ADB.
@@ -188,6 +201,8 @@ anbox::cmds::SessionManager::SessionManager(const BusFactory &bus_factory)
         std::make_shared<network::PublishedSocketConnector>(
             utils::string_format("%s/qemu_pipe", socket_path), rt,
             std::make_shared<qemu::PipeConnectionCreator>(gl_server->renderer(), rt));
+#endif
+    window_manager->setup();
 
     auto bridge_connector = std::make_shared<network::PublishedSocketConnector>(
         utils::string_format("%s/anbox_bridge", socket_path), rt,
@@ -214,6 +229,9 @@ anbox::cmds::SessionManager::SessionManager(const BusFactory &bus_factory)
 
     container::Configuration container_configuration;
     container_configuration.bind_mounts = {
+    #ifdef USE_SFDROID
+        {sfdroid_server->socket_file(), "/dev/sfdroid_head"},
+    #endif
         {qemu_pipe_connector->socket_file(), "/dev/qemu_pipe"},
         {bridge_connector->socket_file(), "/dev/anbox_bridge"},
         {audio_server->socket_file(), "/dev/anbox_audio"},

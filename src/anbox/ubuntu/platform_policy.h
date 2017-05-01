@@ -21,7 +21,11 @@
 #include "anbox/ubuntu/window.h"
 #include "anbox/platform/policy.h"
 
+#ifdef USE_SFDROID
+#include "anbox/graphics/sfdroid/DisplayManager.h"
+#else
 #include "anbox/graphics/emugl/DisplayManager.h"
+#endif
 
 #include <map>
 #include <thread>

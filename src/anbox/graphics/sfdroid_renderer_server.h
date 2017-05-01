@@ -15,44 +15,41 @@
  *
  */
 
-#ifndef ANBOX_GRAPHICS_LAYER_COMPOSER_H_
-#define ANBOX_GRAPHICS_LAYER_COMPOSER_H_
-
-#ifdef USE_SFDROID
-#include "anbox/graphics/sfdroid/Renderer.h"
-#else
-#include "anbox/graphics/emugl/Renderer.h"
-#endif
+#ifndef ANBOX_GRAPHICS_GL_RENDERER_SERVER_H_
+#define ANBOX_GRAPHICS_GL_RENDERER_SERVER_H_
 
 #include <memory>
-#include <map>
+#include <string>
+
+class Renderer;
 
 namespace anbox {
+namespace input {
+class Manager;
+}  // namespace input
 namespace wm {
 class Manager;
-class Window;
 }  // namespace wm
 namespace graphics {
-class LayerComposer {
+class LayerComposer;
+class SFDroidRendererServer {
  public:
-  class Strategy {
-   public:
-    typedef std::map<std::shared_ptr<wm::Window>, RenderableList> WindowRenderableList;
+  SFDroidRendererServer(const std::string& socket_path, const std::shared_ptr<wm::Manager> &wm, bool single_window);
+  ~SFDroidRendererServer();
 
-    virtual ~Strategy() {}
-    virtual WindowRenderableList process_layers(const RenderableList &renderables) = 0;
-  };
-
-  LayerComposer(const std::shared_ptr<Renderer> renderer,
-                const std::shared_ptr<Strategy> &strategy);
-  ~LayerComposer();
-
-  void submit_layers(const RenderableList &renderables);
+  std::shared_ptr<Renderer> renderer() const { return renderer_; }
+  std::string socket_file(){ return socket_file_; }
 
  private:
+  void create_socket(const std::string &socket_path);
+  void start_thread(int fd);
+
+  std::string socket_file_;
   std::shared_ptr<Renderer> renderer_;
-  std::shared_ptr<Strategy> strategy_;
+  std::shared_ptr<wm::Manager> wm_;
+  std::shared_ptr<LayerComposer> composer_;
 };
+
 }  // namespace graphics
 }  // namespace anbox
 

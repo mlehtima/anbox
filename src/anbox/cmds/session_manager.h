@@ -26,7 +26,12 @@
 
 #include <core/dbus/bus.h>
 
+#ifdef USE_SFDROID
+#include "anbox/graphics/sfdroid_renderer_server.h"
+#else
 #include "anbox/graphics/gl_renderer_server.h"
+#endif
+
 #include "anbox/graphics/rect.h"
 
 namespace anbox {
@@ -42,7 +47,9 @@ class SessionManager : public cli::CommandWithFlagsAndAction {
  private:
   BusFactory bus_factory_;
   std::string desktop_file_hint_;
+#ifndef USE_SFDROID
   graphics::GLRendererServer::Config::Driver gles_driver_;
+#endif
   bool single_window_ = false;
   graphics::Rect window_size_;
 };

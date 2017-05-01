@@ -58,6 +58,8 @@ class Window : public std::enable_shared_from_this<Window>, public wm::Window {
   void process_event(const SDL_Event &event);
 
   EGLNativeWindowType native_handle() const override;
+  EGLNativeDisplayType native_display() const override;
+  void *native_surface() const override;
   Id id() const;
   std::uint32_t window_id() const;
 
@@ -66,6 +68,7 @@ class Window : public std::enable_shared_from_this<Window>, public wm::Window {
   std::shared_ptr<Observer> observer_;
   EGLNativeDisplayType native_display_;
   EGLNativeWindowType native_window_;
+  void *native_surface_;
   SDL_Window *window_;
 };
 }  // namespace bridge

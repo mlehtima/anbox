@@ -136,6 +136,9 @@ void PlatformPolicy::process_events() {
         case SDL_MOUSEWHEEL:
         case SDL_KEYDOWN:
         case SDL_KEYUP:
+        case SDL_FINGERDOWN:
+        case SDL_FINGERUP:
+        case SDL_FINGERMOTION:
           process_input_event(event);
           break;
         default:
@@ -207,6 +210,32 @@ void PlatformPolicy::process_input_event(const SDL_Event &event) {
       if (code == KEY_RESERVED) break;
       keyboard_events.push_back({EV_KEY, code, 0});
       break;
+    }
+    case SDL_FINGERDOWN: {
+            int x = event.tfinger.x;
+            int y = event.tfinger.y;
+            mouse_events.push_back({EV_ABS, ABS_X, x});
+            mouse_events.push_back({EV_ABS, ABS_Y, y});
+            mouse_events.push_back({EV_KEY, BTN_LEFT, 1});
+            mouse_events.push_back({EV_SYN, SYN_REPORT, 0});
+        break;
+    }
+    case SDL_FINGERUP: {
+            int x = event.tfinger.x;
+            int y = event.tfinger.y;
+            mouse_events.push_back({EV_ABS, ABS_X, x});
+            mouse_events.push_back({EV_ABS, ABS_Y, y});
+            mouse_events.push_back({EV_KEY, BTN_LEFT, 0});
+            mouse_events.push_back({EV_SYN, SYN_REPORT, 0});
+        break;
+    }
+    case SDL_FINGERMOTION: {
+            int x = event.tfinger.x;
+            int y = event.tfinger.y;
+            mouse_events.push_back({EV_ABS, ABS_X, x});
+            mouse_events.push_back({EV_ABS, ABS_Y, y});
+            mouse_events.push_back({EV_SYN, SYN_REPORT, 0});
+        break;
     }
     default:
       break;

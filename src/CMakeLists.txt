@@ -28,6 +28,55 @@ include_directories(
   ${CMAKE_BINARY_DIR}/external/android-emugl/host/libs/renderControl_dec
 )
 
+if(USE_SFDROID)
+  set(GENERATED_ANDROID_WLEGL_SOURCE wayland-android-protocol.c)
+  set(GENERATED_ANDROID_WLEGL_HEADER wayland-android-client-protocol.h)
+  set(WAYLAND_ANDROID_WLEGL_SOURCES anbox/graphics/sfdroid/wayland-android.xml)
+
+  add_custom_command(
+    OUTPUT ${GENERATED_ANDROID_WLEGL_SOURCE} ${GENERATED_ANDROID_WLEGL_HEADER}
+    POST_BUILD
+    COMMAND wayland-scanner code < ${CMAKE_CURRENT_SOURCE_DIR}/${WAYLAND_ANDROID_WLEGL_SOURCES} > ${CMAKE_CURRENT_BINARY_DIR}/${GENERATED_ANDROID_WLEGL_SOURCE}
+    COMMAND wayland-scanner client-header < ${CMAKE_CURRENT_SOURCE_DIR}/${WAYLAND_ANDROID_WLEGL_SOURCES} > ${CMAKE_CURRENT_BINARY_DIR}/${GENERATED_ANDROID_WLEGL_HEADER}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+  set(GRAPHICS_SOURCES
+    anbox/graphics/sfdroid_renderer_server.cpp
+    anbox/graphics/sfdroid/RenderThread.cpp
+    anbox/graphics/sfdroid/DisplayManager.cpp
+    anbox/graphics/sfdroid/Renderer.cpp
+    anbox/graphics/sfdroid/Renderable.cpp
+    wayland-android-protocol.c)
+
+  set(GRAPHICS_LIBRARIES
+    ${WAYLAND_CLIENT_LDFLAGS}
+    ${WAYLAND_CLIENT_LIBRARIES}
+    boost_program_options #why
+    EGL)
+else(USE_SFDROID)
+  set(GRAPHICS_SOURCES
+    anbox/graphics/gl_renderer_server.cpp
+    anbox/graphics/opengles_message_processor.cpp
+    anbox/graphics/program_family.cpp
+    anbox/graphics/emugl/ColorBuffer.cpp
+    anbox/graphics/emugl/DisplayManager.cpp
+    anbox/graphics/emugl/RendererConfig.cpp
+    anbox/graphics/emugl/Renderable.cpp
+    anbox/graphics/emugl/Renderer.cpp
+    anbox/graphics/emugl/ReadBuffer.cpp
+    anbox/graphics/emugl/RenderApi.cpp
+    anbox/graphics/emugl/RenderContext.cpp
+    anbox/graphics/emugl/RenderControl.cpp
+    anbox/graphics/emugl/RenderThread.cpp
+    anbox/graphics/emugl/RenderThreadInfo.cpp
+    anbox/graphics/emugl/TextureDraw.cpp
+    anbox/graphics/emugl/TextureResize.cpp
+    anbox/graphics/emugl/TimeUtils.cpp
+    anbox/graphics/emugl/WindowSurface.cpp)
+
+  set(GRAPHICS_LIBRARIES GLESv1_dec GLESv2_dec renderControl_dec OpenGLESDispatch OpenglCodecCommon)
+endif(USE_SFDROID)
+
 protobuf_generate_cpp(
     GENERATED_PROTOBUF_RPC_SRCS GENERATED_PROTOBUF_RPC_HDRS
     anbox/protobuf/anbox_rpc.proto)
@@ -119,35 +168,16 @@ set(SOURCES
     anbox/rpc/template_message_processor.h
     anbox/rpc/make_protobuf_object.h
 
-    anbox/graphics/opengles_message_processor.cpp
     anbox/graphics/buffer_queue.cpp
     anbox/graphics/buffered_io_stream.cpp
-    anbox/graphics/gl_renderer_server.cpp
     anbox/graphics/density.h
     anbox/graphics/rect.cpp
     anbox/graphics/layer_composer.cpp
     anbox/graphics/multi_window_composer_strategy.cpp
     anbox/graphics/single_window_composer_strategy.cpp
-    anbox/graphics/program_family.cpp
     anbox/graphics/primitives.h
     anbox/graphics/renderer.h
     anbox/graphics/gl_extensions.h
-
-    anbox/graphics/emugl/ColorBuffer.cpp
-    anbox/graphics/emugl/DisplayManager.cpp
-    anbox/graphics/emugl/RendererConfig.cpp
-    anbox/graphics/emugl/Renderable.cpp
-    anbox/graphics/emugl/Renderer.cpp
-    anbox/graphics/emugl/ReadBuffer.cpp
-    anbox/graphics/emugl/RenderApi.cpp
-    anbox/graphics/emugl/RenderContext.cpp
-    anbox/graphics/emugl/RenderControl.cpp
-    anbox/graphics/emugl/RenderThread.cpp
-    anbox/graphics/emugl/RenderThreadInfo.cpp
-    anbox/graphics/emugl/TextureDraw.cpp
-    anbox/graphics/emugl/TextureResize.cpp
-    anbox/graphics/emugl/TimeUtils.cpp
-    anbox/graphics/emugl/WindowSurface.cpp
 
     anbox/audio/server.cpp
     anbox/audio/client_info.h
@@ -215,12 +245,13 @@ set(SOURCES
     anbox/optional.h
     anbox/defer_action.h)
 
-add_library(anbox-core STATIC ${SOURCES})
+add_library(anbox-core STATIC ${SOURCES} ${GRAPHICS_SOURCES})
 target_link_libraries(anbox-core
   ${Boost_LDFLAGS}
   ${Boost_LIBRARIES}
   ${DBUS_CPP_LDFLAGS}
   ${DBUS_CPP_LIBRARIES}
+  ${GRAPHICS_LIBRARIES}
   ${SDL2_LDFLAGS}
   ${SDL2_LIBRARIES}
   ${SDL2_IMAGE_LDFLAGS}
@@ -232,17 +263,12 @@ target_link_libraries(anbox-core
   pthread
   process-cpp
   emugl_common
-  GLESv1_dec
-  GLESv2_dec
-  renderControl_dec
-  OpenGLESDispatch
-  OpenglCodecCommon
   anbox-protobuf
   xdg)
 
 add_executable(anbox main.cpp)
 target_link_libraries(anbox
-    anbox-core)
+    anbox-core ${GRAPHICS_LIBRARIES})
 
 install(
   TARGETS anbox

@@ -27,14 +27,73 @@
 #include <mir_toolkit/mir_client_library.h>
 #endif
 
+#if defined(WAYLAND_SUPPORT)
+#include <wayland-client.h>
+#endif
+
 #include <SDL_syswm.h>
 #pragma GCC diagnostic pop
 
+#include <iostream>
+using namespace std;
 namespace anbox {
 namespace ubuntu {
 Window::Id Window::Invalid{-1};
 
 Window::Observer::~Observer() {}
+
+#if defined(WAYLAND_SUPPORT)
+//FIXME: ugly hack
+typedef struct {
+    struct SDL_Window *sdlwindow;
+    void *waylandData;
+    struct wl_surface *surface;
+    struct wl_shell_surface *shell_surface;
+    struct wl_egl_window *egl_window;
+    struct SDL_WaylandInput *keyboard_device;
+    EGLSurface egl_surface;
+
+    struct qt_extended_surface *extended_surface;
+} SDL_WindowData;
+
+/* Define the SDL window structure, corresponding to toplevel windows */
+struct SDL_Window
+{
+    const void *magic;
+    Uint32 id;
+    char *title;
+    SDL_Surface *icon;
+    int x, y;
+    int w, h;
+    int min_w, min_h;
+    int max_w, max_h;
+    Uint32 flags;
+    Uint32 last_fullscreen_flags;
+
+    /* Stored position and size for windowed mode */
+    SDL_Rect windowed;
+
+    SDL_DisplayMode fullscreen_mode;
+
+    float brightness;
+    Uint16 *gamma;
+    Uint16 *saved_gamma;        /* (just offset into gamma) */
+
+    SDL_Surface *surface;
+    SDL_bool surface_valid;
+
+    SDL_bool is_destroying;
+
+    void *shaper;
+
+    void *data;
+
+    SDL_WindowData *driverdata;
+
+    SDL_Window *prev;
+    SDL_Window *next;
+};
+#endif
 
 Window::Window(const std::shared_ptr<Renderer> &renderer,
                const Id &id, const wm::Task::Id &task,
@@ -71,10 +130,19 @@ Window::Window(const std::shared_ptr<Renderer> &renderer,
   SDL_VERSION(&info.version);
   SDL_GetWindowWMInfo(window_, &info);
   switch (info.subsystem) {
+#if defined(X11_SUPPORT)
     case SDL_SYSWM_X11:
       native_display_ = static_cast<EGLNativeDisplayType>(info.info.x11.display);
       native_window_ = static_cast<EGLNativeWindowType>(info.info.x11.window);
       break;
+#endif
+#if defined(WAYLAND_SUPPORT)
+    case SDL_SYSWM_WAYLAND:
+      native_display_ = static_cast<EGLNativeDisplayType>(info.info.wl.display);
+      native_window_ = reinterpret_cast<EGLNativeWindowType>((reinterpret_cast<struct SDL_Window*>(window_))->driverdata->egl_window);
+      native_surface_ = info.info.wl.surface;
+      break;
+#endif
 #if defined(MIR_SUPPORT)
     case SDL_SYSWM_MIR: {
       native_display_ = static_cast<EGLNativeDisplayType>(mir_connection_get_egl_native_display(info.info.mir.connection));
@@ -125,6 +193,9 @@ void Window::process_event(const SDL_Event &event) {
 }
 
 EGLNativeWindowType Window::native_handle() const { return native_window_; }
+
+void *Window::native_surface() const { return native_surface_; }
+EGLNativeDisplayType Window::native_display() const { return eglGetDisplay(native_display_); }
 
 Window::Id Window::id() const { return id_; }
 

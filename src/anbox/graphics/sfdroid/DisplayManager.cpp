@@ -15,28 +15,24 @@
  *
  */
 
-#ifndef ANBOX_GRAPHICS_RENDERER_H_
-#define ANBOX_GRAPHICS_RENDERER_H_
+#include "DisplayManager.h"
 
-#ifdef USE_SFDROID
-#include "anbox/graphics/sfdroid/Renderable.h"
-#else
-#include "anbox/graphics/emugl/Renderable.h"
-#endif
+namespace {
+std::shared_ptr<DisplayManager> display_mgr;
 
-#include <EGL/egl.h>
-
-namespace anbox {
-namespace graphics {
-class Renderer {
+class NullDisplayManager : public DisplayManager {
  public:
-  virtual ~Renderer() {}
-
-  virtual bool draw(EGLNativeWindowType native_window,
-                    const anbox::graphics::Rect& window_frame,
-                    const RenderableList& renderables) = 0;
+  DisplayInfo display_info() const override { return {1280, 720}; }
 };
-}  // namespace graphics
-}  // namespace anbox
+}
 
-#endif
+DisplayManager::~DisplayManager() {}
+
+std::shared_ptr<DisplayManager> DisplayManager::get() {
+  if (!display_mgr) display_mgr = std::make_shared<NullDisplayManager>();
+  return display_mgr;
+}
+
+void registerDisplayManager(const std::shared_ptr<DisplayManager> &mgr) {
+  display_mgr = mgr;
+}
