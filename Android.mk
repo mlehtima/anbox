@@ -66,8 +66,7 @@ include $(CLEAR_VARS)
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_SHARED_LIBRARIES := \
     liblog \
-    lib_renderControl_enc \
-    libOpenglSystemCommon
+    libEGL
 LOCAL_SRC_FILES := \
     android/hwcomposer/hwcomposer.cpp
 LOCAL_MODULE := hwcomposer.anbox

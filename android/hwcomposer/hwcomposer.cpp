@@ -1,79 +1,80 @@
 /*
- * Copyright (C) 2016 Simon Fels <morphis@gravedo.de>
+ * Copyright (C) 2010 The Android Open Source Project
  *
- * This program is free software: you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 3, as published
- * by the Free Software Foundation.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranties of
- * MERCHANTABILITY, SATISFACTORY QUALITY, or FITNESS FOR A PARTICULAR
- * PURPOSE.  See the GNU General Public License for more details.
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License along
- * with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include <hardware/hardware.h>
+
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/ioctl.h>
+
+#include <sys/socket.h>
+#include <sys/un.h>
+
+#include <errno.h>
+#include <fcntl.h>
+#include <malloc.h>
+
+#include <cutils/log.h>
+#include <cutils/atomic.h>
+
+#include <time.h>
+
 #include <hardware/hwcomposer.h>
 
-#include <map>
-#include <vector>
-#include <algorithm>
-#include <string>
+#include <linux/fb.h>
 
-#define LOG_NDEBUG 1
-#include <cutils/log.h>
+#include <EGL/egl.h>
 
-#include "HostConnection.h"
-#include "gralloc_cb.h"
+/*****************************************************************************/
 
-#define DEFINE_HOST_CONNECTION() \
-    HostConnection *hostCon = HostConnection::get(); \
-    renderControl_encoder_context_t *rcEnc = (hostCon ? hostCon->rcEncoder() : NULL)
+char stored_layer_name[HWC_LAYER_NAME_MAX_LENGTH];
 
-#define DEFINE_AND_VALIDATE_HOST_CONNECTION() \
-    HostConnection *hostCon = HostConnection::get(); \
-    if (!hostCon) { \
-        ALOGE("hwcomposer.anbox: Failed to get host connection\n"); \
-        return -EIO; \
-    } \
-    renderControl_encoder_context_t *rcEnc = hostCon->rcEncoder(); \
-    if (!rcEnc) { \
-        ALOGE("hwcomposer.anbox: Failed to get renderControl encoder context\n"); \
-        return -EIO; \
-    }
-
-struct HwcContext {
+struct hwc_context_t {
     hwc_composer_device_1_t device;
+    hwc_procs_t const* procs;
 
-    // These 3 variables could be reduced to first_overlay only, however it makes
-    // the conditions in the code more complicated. In order to keep things as
-    // simple as possible, there are 3 major ways to display a frame.
-    // 1. Show only the framebuffer.
-    // 2. Show the framebuffer with some overlays above it.
-    // 3. Show all overlays and hide the framebuffer.
-    //
-    // Since the framebuffer has no alpha channel and is opaque, it can only ever
-    // be the rearmost layer that we end up putting on screen, otherwise it will
-    // cover up all layers behind it, since its display frame is the whole window.
-    //
-    // Without framebuffer_visible, the condition of whether to display the
-    // frambuffer becomes more complex and possibly if (numHwLayers == 0 ||
-    // hwLayers[0]->compositionType != HWC_OVERLAY) but that might not be correct.
-    //
-    // The range [first_overlay, first_overlay+num_overlay) is a natural way to
-    // structure the loop and prevents requiring state and iterating through all
-    // the non-OVERLAY layers in hwc_set.
-    bool framebuffer_visible;
-    size_t first_overlay;
-    size_t num_overlays;
+    /* our private state goes below here */
+    int fd;
 };
 
+static int hwc_device_open(const struct hw_module_t* module, const char* name,
+        struct hw_device_t** device);
+
+static struct hw_module_methods_t hwc_module_methods = {
+    open: hwc_device_open
+};
+
+hwc_module_t HAL_MODULE_INFO_SYM = {
+    common: {
+        tag: HARDWARE_MODULE_TAG,
+        version_major: 1,
+        version_minor: 0,
+        id: HWC_HARDWARE_MODULE_ID,
+        name: "Sample hwcomposer module",
+        author: "The Android Open Source Project",
+        methods: &hwc_module_methods,
+    }
+};
+
+/*****************************************************************************/
+
 static void dump_layer(hwc_layer_1_t const* l) {
-    ALOGD("\tname='%s', type=%d, flags=%08x, handle=%p, tr=%02x, blend=%04x, {%d,%d,%d,%d}, {%d,%d,%d,%d}",
-            l->name, l->compositionType, l->flags, l->handle, l->transform, l->blending,
+    ALOGD("\ttype=%d, flags=%08x, handle=%p, tr=%02x, blend=%04x, {%d,%d,%d,%d}, {%d,%d,%d,%d}",
+            l->compositionType, l->flags, l->handle, l->transform, l->blending,
             l->sourceCrop.left,
             l->sourceCrop.top,
             l->sourceCrop.right,
@@ -84,14 +85,15 @@ static void dump_layer(hwc_layer_1_t const* l) {
             l->displayFrame.bottom);
 }
 
-static int hwc_prepare(hwc_composer_device_1_t* dev, size_t numDisplays,
-                       hwc_display_contents_1_t** displays) {
-    auto context = reinterpret_cast<HwcContext*>(dev);
-
-    if (displays == NULL || displays[0] == NULL)
-        return -EINVAL;
-
-    // Anbox only supports the primary display.
+static int hwc_prepare(hwc_composer_device_1_t *dev,
+        size_t numDisplays, hwc_display_contents_1_t** displays) {
+    if (displays && (displays[0]->flags & HWC_GEOMETRY_CHANGED)) {
+        for (size_t i=0 ; i<displays[0]->numHwLayers ; i++) {
+            //dump_layer(&displays[0]->hwLayers[i]);
+            displays[0]->hwLayers[i].compositionType = HWC_FRAMEBUFFER;
+        }
+    }
+#if 0
     if (displays[0]->flags & HWC_GEOMETRY_CHANGED) {
         const size_t& num_hw_layers = displays[0]->numHwLayers;
         size_t i = 1;
@@ -128,205 +130,451 @@ static int hwc_prepare(hwc_composer_device_1_t* dev, size_t numDisplays,
                       layer->compositionType);
               break;
           }
-        }
-        context->first_overlay = num_hw_layers - i;
-        context->num_overlays = i - 1;
-        context->framebuffer_visible = visible;
+       }
+    }
+#endif
+    return 0;
+}
+
+int connect_to_renderer()
+{
+    struct sockaddr_un addr;
+    int fd;
+
+    fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if(fd < 0)
+    {
+        ALOGE("error creating socket stream");
+        return -1;
+    }
+
+    // don't crash if we disconnect
+    //int set = 1;
+    //setsockopt(sd, SOL_SOCKET, SO_NOSIGPIPE, (void *)&set, sizeof(int));
+    signal(SIGPIPE, SIG_IGN);
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, "/dev/sfdroid_head", sizeof(addr.sun_path)-1);
+
+    if(connect(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
+    {
+        ALOGE("error connecting to renderer: %s", strerror(errno));
+        close(fd);
+        return -1;
+    }
+
+    return fd;
+}
+
+struct buffer_info_t {
+    char layer_name[HWC_LAYER_NAME_MAX_LENGTH];
+    int width;
+    int height;
+    int stride;
+    int format;
+};
+
+int send_native_handle(int fd, const native_handle_t *handle, char *layer_name, int width, int height, int stride, int format)
+{
+    struct msghdr socket_message;
+    struct iovec io_vector[1];
+    struct cmsghdr *control_message = NULL;
+    unsigned int buffer_size = sizeof(struct buffer_info_t) + sizeof(native_handle_t) + sizeof(int)*(handle->numFds + handle->numInts);
+    unsigned int handle_size = sizeof(native_handle_t) + sizeof(int)*(handle->numFds + handle->numInts);
+    char message_buffer[buffer_size];
+    char ancillary_buffer[CMSG_SPACE(sizeof(int) * handle->numFds)];
+    struct buffer_info_t binfo;
+
+    strncpy(binfo.layer_name, layer_name, HWC_LAYER_NAME_MAX_LENGTH);
+    binfo.width = width;
+    binfo.height = height;
+    binfo.stride = stride;
+    binfo.format = format;
+
+    memcpy(message_buffer, &binfo, sizeof(struct buffer_info_t));
+    memcpy(message_buffer + sizeof(struct buffer_info_t), handle, handle_size);
+
+    io_vector[0].iov_base = message_buffer;
+    io_vector[0].iov_len = buffer_size;
+
+    memset(&socket_message, 0, sizeof(struct msghdr));
+    socket_message.msg_iov = io_vector;
+    socket_message.msg_iovlen = 1;
+
+    memset(ancillary_buffer, 0, CMSG_SPACE(sizeof(int) * handle->numFds));
+
+    socket_message.msg_control = ancillary_buffer;
+    socket_message.msg_controllen = CMSG_SPACE(sizeof(int) * handle->numFds);
+
+    control_message = CMSG_FIRSTHDR(&socket_message);
+    control_message->cmsg_len = socket_message.msg_controllen;
+    control_message->cmsg_level = SOL_SOCKET;
+    control_message->cmsg_type = SCM_RIGHTS;
+
+    for(int i=0;i<handle->numFds;i++)
+    {
+        ((int*)CMSG_DATA(control_message))[i] = handle->data[i];
+    }
+
+    return sendmsg(fd, &socket_message, MSG_WAITALL);
+}
+
+static int hwc_set_layer_name(hwc_composer_device_1_t *dev, char *layer_name)
+{
+        memcpy(&stored_layer_name[0], layer_name, HWC_LAYER_NAME_MAX_LENGTH);
+        return 0;
+}
+
+static int hwc_share_buffer(hwc_composer_device_1_t *dev, buffer_handle_t buffer, int width, int height, int stride, int format)
+{
+    struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
+
+    if(ctx->fd < 0)
+    {
+        ctx->fd = connect_to_renderer();
+    }
+
+    if(ctx->fd >= 0)
+    {
+       char num_fdsints[2];
+       char syncbyte = 0xAA;
+       num_fdsints[0] = buffer->numFds;
+       num_fdsints[1] = buffer->numInts;
+
+       if(send(ctx->fd, &syncbyte, 1, 0) < 0) {
+           ALOGE("failed to send sync byte");
+           close(ctx->fd);
+           ctx->fd = -1;
+           return -1;
+       }
+
+       if(send(ctx->fd, &num_fdsints[0], 2, MSG_WAITALL) != 2) {
+           ALOGE("failed to send fds or ints count");
+           close(ctx->fd);
+           ctx->fd = -1;
+           return -1;
+       }
+
+       if(send_native_handle(ctx->fd, buffer, &stored_layer_name[0], width, height, stride, format) < 0) {
+           ALOGE("failed to send native handle");
+           close(ctx->fd);
+           ctx->fd = -1;
+           return -1;
+       }
+
+      // till the frame has been processed
+      if(recv(ctx->fd, &syncbyte, 1, 0) != 1) {
+          ALOGE("failed to wait for frame processed");
+          close(ctx->fd);
+          ctx->fd = -1;
+          return -1;
+      }
+   }
+
+   return 0;
+}
+
+static int hwc_set(hwc_composer_device_1_t *dev,
+        size_t numDisplays, hwc_display_contents_1_t** displays)
+{
+    //for (size_t i=0 ; i<list->numHwLayers ; i++) {
+    //    dump_layer(&list->hwLayers[i]);
+    //}
+
+    EGLBoolean sucess = eglSwapBuffers((EGLDisplay)displays[0]->dpy,
+            (EGLSurface)displays[0]->sur);
+    if (!sucess) {
+        return HWC_EGL_ERROR;
     }
 
     return 0;
 }
 
-/*
- * We're using "implicit" synchronization, so make sure we aren't passing any
- * sync object descriptors around.
- */
-static void check_sync_fds(size_t numDisplays, hwc_display_contents_1_t** displays)
+static int hwc_device_close(struct hw_device_t *dev)
 {
-    unsigned int i, j;
-    for (i = 0; i < numDisplays; i++) {
-        hwc_display_contents_1_t* list = displays[i];
-        if (list->retireFenceFd >= 0) {
-            ALOGW("retireFenceFd[%u] was %d", i, list->retireFenceFd);
-            list->retireFenceFd = -1;
-        }
-
-        for (j = 0; j < list->numHwLayers; j++) {
-            hwc_layer_1_t* layer = &list->hwLayers[j];
-            if (layer->acquireFenceFd >= 0) {
-                ALOGW("acquireFenceFd[%u][%u] was %d, closing", i, j, layer->acquireFenceFd);
-                close(layer->acquireFenceFd);
-                layer->acquireFenceFd = -1;
-            }
-            if (layer->releaseFenceFd >= 0) {
-                ALOGW("releaseFenceFd[%u][%u] was %d", i, j, layer->releaseFenceFd);
-                layer->releaseFenceFd = -1;
-            }
-        }
+    struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
+    if (ctx) {
+        free(ctx);
     }
+    return 0;
 }
 
-static int hwc_set(hwc_composer_device_1_t* dev, size_t numDisplays,
-                   hwc_display_contents_1_t** displays) {
-    auto context = reinterpret_cast<HwcContext*>(dev);
+static int hwc_blank(struct hwc_composer_device_1* dev, int dpy, int blank)
+{
+    ALOGD("blank");
+    return 0;
+}
 
-    if (displays == NULL || displays[0] == NULL)
-        return -EFAULT;
+static int hwc_query(struct hwc_composer_device_1* dev,
+int param, int* value)
+{
+    ALOGD("query");
+    return 0;
+}
 
-    DEFINE_AND_VALIDATE_HOST_CONNECTION();
+static void hwc_registerProcs(struct hwc_composer_device_1* dev,
+hwc_procs_t const* procs)
+{
+    ALOGD("%s", __FUNCTION__);
 
-    for (size_t i = 0 ; i < displays[0]->numHwLayers ; i++) {
-        const auto layer = &displays[0]->hwLayers[i];
+    hwc_context_t* ctx = (hwc_context_t*)(dev);
 
-        if (layer->flags & HWC_SKIP_LAYER ||
-            layer->flags & HWC_IS_CURSOR_LAYER)
-            continue;
+    ctx->procs = procs;
+};
 
+static int hwc_getDisplayConfigs(struct hwc_composer_device_1* dev, int disp,
+uint32_t* configs, size_t* numConfigs) {
+    ALOGD("%s", __FUNCTION__);
+
+    int ret = 0;
+
+    if(*numConfigs == 1) {
+        *configs = 0;
+    }
+
+    *numConfigs = 1;
+
+    switch(disp) {
+        case HWC_DISPLAY_PRIMARY:
+            ret = 0;
+            break;
+        case HWC_DISPLAY_EXTERNAL:
+            ret = -1;
+            break;
+    };
+
+    return ret;
+}
+
+static bool info_initialized = false;
+static struct fb_fix_screeninfo finfo;
+struct fb_var_screeninfo info;
+
+static int initialize_info(void)
+{
+    char const * const device_template[] = {
+            "/dev/graphics/fb%u",
+            "/dev/fb%u",
+            0 };
+
+    int fd = -1;
+    int i=0;
+    char name[64];
+
+    while ((fd==-1) && device_template[i]) {
+        snprintf(name, 64, device_template[i], 0);
+        fd = open(name, O_RDWR, 0);
+        i++;
+    }
+    if (fd < 0)
+        return -errno;
+
+    if (ioctl(fd, FBIOGET_FSCREENINFO, &finfo) == -1)
+        return -errno;
+
+    if (ioctl(fd, FBIOGET_VSCREENINFO, &info) == -1)
+        return -errno;
+
+    info.reserved[0] = 0;
+    info.reserved[1] = 0;
+    info.reserved[2] = 0;
+    info.xoffset = 0;
+    info.yoffset = 0;
+    info.activate = FB_ACTIVATE_NOW;
+
+    /*
+     * Request NUM_BUFFERS screens (at lest 2 for page flipping)
+     */
 #if 0
-        dump_layer(layer);
+    info.yres_virtual = info.yres * NUM_BUFFERS;
+#if USE_PAN_DISPLAY
+    if (ioctl(fd, FBIOPAN_DISPLAY, &info) == -1) {
+        ALOGW("FBIOPAN_DISPLAY failed, page flipping not supported");
+#else
+    if (ioctl(fd, FBIOPUT_VSCREENINFO, &info) == -1) {
+        ALOGW("FBIOPUT_VSCREENINFO failed, page flipping not supported");
 #endif
+        info.yres_virtual = info.yres;
+    }
 
-        // FIXME this is just dirty ... but layer->handle is a const native_handle_t and canBePosted
-        // can't be called with a const.
-        auto cb = const_cast<cb_handle_t*>(reinterpret_cast<const cb_handle_t*>(layer->handle));
-        if (!cb_handle_t::validate(cb)) {
-            ALOGE("Buffer handle is invalid\n");
+    if (info.yres_virtual < info.yres * 2) {
+        // we need at least 2 for page-flipping
+        info.yres_virtual = info.yres;
+        ALOGW("page flipping not supported (yres_virtual=%d, requested=%d)",
+                info.yres_virtual, info.yres*2);
+    }
+
+    if (ioctl(fd, FBIOGET_VSCREENINFO, &info) == -1)
+        return -errno;
+
+    uint64_t  refreshQuotient =
+    (
+            uint64_t( info.upper_margin + info.lower_margin + info.yres )
+            * ( info.left_margin  + info.right_margin + info.xres )
+            * info.pixclock
+    );
+
+    /* Beware, info.pixclock might be 0 under emulation, so avoid a
+     * division-by-0 here (SIGFPE on ARM) */
+    int refreshRate = refreshQuotient > 0 ? (int)(1000000000000000LLU / refreshQuotient) : 0;
+
+    if (refreshRate == 0) {
+        // bleagh, bad info from the driver
+        refreshRate = 60*1000;  // 60 Hz
+    }
+
+    if (int(info.width) <= 0 || int(info.height) <= 0) {
+        // the driver doesn't return that information
+        // default to 160 dpi
+        info.width  = ((info.xres * 25.4f)/160.0f + 0.5f);
+        info.height = ((info.yres * 25.4f)/160.0f + 0.5f);
+    }
+#endif
+    close(fd);
+
+    return 0;
+}
+
+static int hwc_getDisplayAttributes(struct hwc_composer_device_1* dev, int disp,
+uint32_t config, const uint32_t* attributes, int32_t* values) {
+    ALOGD("%s", __FUNCTION__);
+
+    if(!info_initialized) {
+        initialize_info();
+        info_initialized = true;
+    }
+
+    float xdpi = (720.f * 25.4f) / 72.f;
+    float ydpi = (1280.f * 25.4f) / 142.f;
+
+    hwc_context_t* ctx = (hwc_context_t*)(dev);
+
+    static const uint32_t DISPLAY_ATTRIBUTES[] = {
+        HWC_DISPLAY_VSYNC_PERIOD,
+        HWC_DISPLAY_WIDTH,
+        HWC_DISPLAY_HEIGHT,
+        HWC_DISPLAY_DPI_X,
+        HWC_DISPLAY_DPI_Y,
+        HWC_DISPLAY_NO_ATTRIBUTE,
+    };
+
+    const int NUM_DISPLAY_ATTRIBUTES = (sizeof(DISPLAY_ATTRIBUTES) /
+            sizeof(DISPLAY_ATTRIBUTES)[0]);
+
+    for (size_t i = 0; i < NUM_DISPLAY_ATTRIBUTES - 1; i++) {
+        switch (attributes[i]) {
+        case HWC_DISPLAY_VSYNC_PERIOD:
+            values[i] = 16666666;
+            break;
+        case HWC_DISPLAY_WIDTH:
+            values[i] = 720;//info.xres;
+            break;
+        case HWC_DISPLAY_HEIGHT:
+            values[i] = 1280;//info.yres;
+            break;
+        case HWC_DISPLAY_DPI_X:
+            values[i] = (int32_t) (xdpi * 1000.0);
+            break;
+        case HWC_DISPLAY_DPI_Y:
+            values[i] = (int32_t) (ydpi * 1000.0);
+            break;
+        default:
+            ALOGE("Unknown display attribute %d",
+                    attributes[i]);
             return -EINVAL;
         }
-
-        rcEnc->rcPostLayer(rcEnc,
-                           layer->name,
-                           cb->hostHandle,
-                           layer->sourceCrop.left,
-                           layer->sourceCrop.top,
-                           layer->sourceCrop.right,
-                           layer->sourceCrop.bottom,
-                           layer->displayFrame.left,
-                           layer->displayFrame.top,
-                           layer->displayFrame.right,
-                           layer->displayFrame.bottom);
-        hostCon->flush();
     }
 
-    rcEnc->rcPostAllLayersDone(rcEnc);
-
-    check_sync_fds(numDisplays, displays);
-
     return 0;
 }
 
-static int hwc_event_control(hwc_composer_device_1* dev, int disp,
-                             int event, int enabled) {
-    return -EFAULT;
+// TODO: move to ctx?
+static int vsync_enabled = false;
+
+static bool created = false;
+
+static uint64_t tm = 0;
+
+static int64_t systemTime()
+{
+    struct timespec t;
+    t.tv_sec = t.tv_nsec = 0;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (int64_t)(t.tv_sec)*1000000000LL + t.tv_nsec;
 }
 
-static void hwc_register_procs(hwc_composer_device_1* dev,
-                               hwc_procs_t const* procs) {
-}
+static void *vsync_loop(void *param) {
+    uint64_t cur_timestamp;
+    int dpy = HWC_DISPLAY_PRIMARY;
+    hwc_context_t * ctx = reinterpret_cast<hwc_context_t *>(param);
 
-static int hwc_blank(hwc_composer_device_1* dev, int disp, int blank) {
-    return 0;
-}
+    do {
+        cur_timestamp = systemTime();
 
-static int hwc_query(hwc_composer_device_1* dev, int what, int* value) {
-    return 0;
-}
+        if (vsync_enabled) {
+            ctx->procs->vsync(ctx->procs, dpy, cur_timestamp);
+        }
 
-static int hwc_device_close(hw_device_t* dev) {
-    auto context = reinterpret_cast<HwcContext*>(dev);
-    delete context;
-    return 0;
-}
-
-static int hwc_get_display_configs(hwc_composer_device_1* dev, int disp,
-                                   uint32_t* configs, size_t* numConfigs) {
-  if (disp != 0) {
-    return -EINVAL;
-  }
-
-  if (*numConfigs > 0) {
-    // Config[0] will be passed in to getDisplayAttributes as the disp
-    // parameter. The ARC display supports only 1 configuration.
-    configs[0] = 0;
-    *numConfigs = 1;
-  }
-  return 0;
-}
-
-static int hwc_get_display_attributes(hwc_composer_device_1* dev,
-                                      int disp, uint32_t config,
-                                      const uint32_t* attributes,
-                                      int32_t* values) {
-  if (disp != 0 || config != 0) {
-    return -EINVAL;
-  }
-
-  DEFINE_AND_VALIDATE_HOST_CONNECTION();
-
-  while (*attributes != HWC_DISPLAY_NO_ATTRIBUTE) {
-    switch (*attributes) {
-      case HWC_DISPLAY_VSYNC_PERIOD:
-        *values = rcEnc->rcGetDisplayVsyncPeriod(rcEnc, disp);
-        break;
-      case HWC_DISPLAY_WIDTH:
-        *values = rcEnc->rcGetDisplayWidth(rcEnc, disp);
-        break;
-      case HWC_DISPLAY_HEIGHT:
-        *values = rcEnc->rcGetDisplayHeight(rcEnc, disp);
-        break;
-      case HWC_DISPLAY_DPI_X:
-        *values = 1000 * rcEnc->rcGetDisplayDpiX(rcEnc, disp);
-        break;
-      case HWC_DISPLAY_DPI_Y:
-        *values = 1000 * rcEnc->rcGetDisplayDpiY(rcEnc, disp);
-        break;
-      default:
-        ALOGE("Unknown attribute value 0x%02x", *attributes);
+        usleep(16666);
     }
-    ++attributes;
-    ++values;
-  }
-  return 0;
+    while (true);
+
+    return NULL;
 }
 
-static int hwc_device_open(const hw_module_t* module, const char* name, hw_device_t** device) {
-    ALOGD("%s", __PRETTY_FUNCTION__);
+static int hwc_eventControl(struct hwc_composer_device_1* dev, int dpy,
+int event, int enable)
+{
+    pthread_t vsync_thread;
 
-    if (strcmp(name, HWC_HARDWARE_COMPOSER) != 0)
-        return -EINVAL;
+    hwc_context_t* ctx = (hwc_context_t*)(dev);
 
-    auto dev = new HwcContext;
-    dev->device.common.tag = HARDWARE_DEVICE_TAG;
-    dev->device.common.version = HWC_DEVICE_API_VERSION_1_0;
-    dev->device.common.module = const_cast<hw_module_t*>(module);
-    dev->device.common.close = hwc_device_close;
-    dev->device.prepare = hwc_prepare;
-    dev->device.set = hwc_set;
-    dev->device.eventControl = hwc_event_control;
-    dev->device.blank = hwc_blank;
-    dev->device.query = hwc_query;
-    dev->device.getDisplayConfigs = hwc_get_display_configs;
-    dev->device.getDisplayAttributes = hwc_get_display_attributes;
-    dev->device.registerProcs = hwc_register_procs;
-    dev->device.dump = nullptr;
+    if (event == HWC_EVENT_VSYNC) {
+        vsync_enabled = enable;
 
-    *device = &dev->device.common;
-
+        if (!created) {
+            created = true;
+            pthread_create(&vsync_thread, NULL, vsync_loop, (void*) ctx);
+        }
+    }
     return 0;
 }
 
-static hw_module_methods_t hwc_module_methods = {
-    .open = hwc_device_open
-};
+/*****************************************************************************/
 
-hwc_module_t HAL_MODULE_INFO_SYM = {
-    .common = {
-        .tag = HARDWARE_MODULE_TAG,
-        .version_major = 1,
-        .version_minor = 0,
-        .id = HWC_HARDWARE_MODULE_ID,
-        .name = "Hardware Composer Module",
-        .author = "Anbox Developers",
-        .methods = &hwc_module_methods,
+static int hwc_device_open(const struct hw_module_t* module, const char* name,
+        struct hw_device_t** device)
+{
+    int status = -EINVAL;
+    if (!strcmp(name, HWC_HARDWARE_COMPOSER)) {
+        struct hwc_context_t *dev;
+        dev = (hwc_context_t*)malloc(sizeof(*dev));
+
+        /* initialize our state here */
+        memset(dev, 0, sizeof(*dev));
+
+        dev->fd = -1;
+
+        /* initialize the procs */
+        dev->device.common.tag = HARDWARE_DEVICE_TAG;
+        dev->device.common.version = HWC_DEVICE_API_VERSION_1_1;
+        dev->device.common.module = const_cast<hw_module_t*>(module);
+        dev->device.common.close = hwc_device_close;
+
+        dev->device.prepare = hwc_prepare;
+        dev->device.set = hwc_set;
+        dev->device.share_buffer = hwc_share_buffer;
+        dev->device.set_layer_name = hwc_set_layer_name;
+        dev->device.blank = hwc_blank;
+        dev->device.query = hwc_query;
+        dev->device.eventControl = hwc_eventControl;
+        dev->device.registerProcs = hwc_registerProcs;
+        dev->device.getDisplayConfigs = hwc_getDisplayConfigs;
+        dev->device.getDisplayAttributes = hwc_getDisplayAttributes;
+
+        *device = &dev->device.common;
+        status = 0;
     }
-};
+    return status;
+}
