@@ -12,10 +12,9 @@ BuildRequires:  protobuf-compiler
 BuildRequires:  boost-devel
 BuildRequires:  pkgconfig(glib-2.0)
 BuildRequires:  pkgconfig(sdl2)
-BuildRequires:  pkgconfig(android-headers)
-BuildRequires:  pkgconfig(libhardware)
 BuildRequires:  protobuf-lite-devel
 BuildRequires:  properties-cpp-devel
+BuildRequires:  anbox-sfdroid-image
 
 Requires:  boost-filesystem
 Requires:  boost-iostreams
