@@ -8,6 +8,14 @@ URL:        https://github.com/anbox/anbox
 Source:     %{name}-%{version}.tar.gz
 
 BuildRequires:  cmake
+BuildRequires:  mesa-llvmpipe-libEGL-devel
+BuildRequires:  mesa-llvmpipe-libGLESv2-devel
+BuildRequires:  SDL2-devel
+BuildRequires:  SDL2_image-devel
+BuildRequires:  dbus-cpp-devel
+BuildRequires:  lxc-devel
+BuildRequires:  wayland-devel
+BuildRequires:  mesa-llvmpipe-libwayland-egl-devel
 BuildRequires:  protobuf-compiler
 BuildRequires:  boost-devel
 BuildRequires:  pkgconfig(glib-2.0)
@@ -41,7 +49,7 @@ BuildRequires:  pkgconfig(libcap)
 %build
 mkdir -p build
 cd build
-%cmake -DUSE_SFDROID=ON -DBUILD_TESTING=OFF ..
+%cmake -DUSE_SFDROID=ON -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Debug ..
 make %{?jobs:-j%jobs}
 
 %install
