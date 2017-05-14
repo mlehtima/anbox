@@ -92,3 +92,4 @@ prepare-anbox
 #%{_libdir}/udev/rules.d/99-anbox.rules
 %{_datadir}/applications/anbox.desktop
 %{_datadir}/pixmaps/anbox.png
+%{_datadir}/anbox/ui/loading-screen.png
