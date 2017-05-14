@@ -52,7 +52,8 @@ if(USE_SFDROID)
     ${WAYLAND_CLIENT_LDFLAGS}
     ${WAYLAND_CLIENT_LIBRARIES}
     boost_program_options #why
-    EGL)
+    EGL
+    dl) #To dlopen libhybris
 else(USE_SFDROID)
   set(GRAPHICS_SOURCES
     anbox/graphics/gl_renderer_server.cpp
@@ -244,7 +245,6 @@ set(SOURCES
     anbox/defer_action.h)
 
 add_library(anbox-core STATIC ${SOURCES} ${GRAPHICS_SOURCES})
-if (NOT USE_SFDROID)
 target_link_libraries(anbox-core
   ${Boost_LDFLAGS}
   ${Boost_LIBRARIES}
@@ -264,28 +264,6 @@ target_link_libraries(anbox-core
   emugl_common
   anbox-protobuf
   xdg)
-else (NOT USE_SFDROID)
-target_link_libraries(anbox-core
-  ${Boost_LDFLAGS}
-  ${Boost_LIBRARIES}
-  ${DBUS_CPP_LDFLAGS}
-  ${DBUS_CPP_LIBRARIES}
-  ${GRAPHICS_LIBRARIES}
-  ${SDL2_LDFLAGS}
-  ${SDL2_LIBRARIES}
-  ${SDL2_IMAGE_LDFLAGS}
-  ${SDL2_IMAGE_LIBRARIES}
-  ${LXC_LDFLAGS}
-  ${LXC_LIBRARIES}
-  ${MIRCLIENT_LDFLAGS}
-  ${MIRCLIENT_LIBRARIES}
-  pthread
-  process-cpp
-  emugl_common
-  anbox-protobuf
-  xdg
-  dl)
-endif (NOT USE_SFDROID)
 
 add_executable(anbox main.cpp)
 target_link_libraries(anbox
