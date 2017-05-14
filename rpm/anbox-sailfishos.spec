@@ -22,7 +22,7 @@ BuildRequires:  pkgconfig(glib-2.0)
 BuildRequires:  pkgconfig(sdl2)
 BuildRequires:  protobuf-lite-devel
 BuildRequires:  properties-cpp-devel
-BuildRequires:  anbox-sfdroid-image
+BuildRequires:  pkgconfig(libcap)
 
 Requires:  boost-filesystem
 Requires:  boost-iostreams
@@ -34,9 +34,7 @@ Requires:  lxc
 Requires:  protobuf
 Requires:  libprocess-cpp2
 
-
-
-BuildRequires:  pkgconfig(libcap)
+%define debug_package %{nil}
 
 %description
   Runtime for Android applications which runs a full Android system
