@@ -49,7 +49,7 @@ BuildRequires:  pkgconfig(libcap)
 %build
 mkdir -p build
 cd build
-%cmake -DUSE_SFDROID=ON -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Debug ..
+%cmake -DUSE_SFDROID=ON -DBUILD_TESTING=OFF ..
 make %{?jobs:-j%jobs}
 
 %install
