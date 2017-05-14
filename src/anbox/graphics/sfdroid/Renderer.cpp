@@ -33,10 +33,14 @@ void Renderer::destroyNativeWindow(EGLNativeWindowType native_window) {
 
 bool Renderer::initialize(EGLNativeDisplayType nativeDisplay) {
     egl_dpy = nativeDisplay;
+    // hack
+    lhcommon = dlopen("/usr/lib/libhybris-common.so", RTLD_LAZY);
+    hybris_egl_display_get_mapping = (void* (*)(EGLNativeDisplayType))dlsym(lhcommon, "hybris_egl_display_get_mapping");
     return true;
 }
 
 void Renderer::finalize() {
+    dlclose(lhcommon);
 }
 #include <string.h>
 #include <stdlib.h>
@@ -108,8 +112,6 @@ struct WaylandDisplay {
         wl_registry *registry;
         android_wlegl *wlegl;
 };
-
-extern "C" void *hybris_egl_display_get_mapping(EGLNativeDisplayType dpy);
 
 bool Renderer::draw(EGLNativeWindowType native_window,
                     const anbox::graphics::Rect &window_frame,
