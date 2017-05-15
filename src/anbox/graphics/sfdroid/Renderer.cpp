@@ -34,7 +34,7 @@ void Renderer::destroyNativeWindow(EGLNativeWindowType native_window) {
 bool Renderer::initialize(EGLNativeDisplayType nativeDisplay) {
     egl_dpy = nativeDisplay;
     // hack
-    lhcommon = dlopen("/usr/lib/libhybris-common.so", RTLD_LAZY);
+    lhcommon = dlopen("/usr/lib/libEGL.so.1", RTLD_LAZY);
     hybris_egl_display_get_mapping = (void* (*)(EGLNativeDisplayType))dlsym(lhcommon, "hybris_egl_display_get_mapping");
     return true;
 }
