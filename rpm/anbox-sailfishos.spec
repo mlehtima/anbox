@@ -29,6 +29,7 @@ Requires:  boost-iostreams
 Requires:  boost-system
 Requires:  boost-thread
 Requires:  boost-program-options
+Requires:  anbox-sailfishos-image
 Requires:  boost-log
 Requires:  lxc
 Requires:  protobuf
