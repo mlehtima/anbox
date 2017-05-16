@@ -41,8 +41,6 @@
 
 /*****************************************************************************/
 
-char stored_layer_name[HWC_LAYER_NAME_MAX_LENGTH];
-
 struct hwc_context_t {
     hwc_composer_device_1_t device;
     hwc_procs_t const* procs;
@@ -93,7 +91,6 @@ static int hwc_prepare(hwc_composer_device_1_t *dev,
             displays[0]->hwLayers[i].compositionType = HWC_FRAMEBUFFER;
         }
     }
-#if 0
     if (displays[0]->flags & HWC_GEOMETRY_CHANGED) {
         const size_t& num_hw_layers = displays[0]->numHwLayers;
         size_t i = 1;
@@ -132,147 +129,7 @@ static int hwc_prepare(hwc_composer_device_1_t *dev,
           }
        }
     }
-#endif
     return 0;
-}
-
-int connect_to_renderer()
-{
-    struct sockaddr_un addr;
-    int fd;
-
-    fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if(fd < 0)
-    {
-        ALOGE("error creating socket stream");
-        return -1;
-    }
-
-    // don't crash if we disconnect
-    //int set = 1;
-    //setsockopt(sd, SOL_SOCKET, SO_NOSIGPIPE, (void *)&set, sizeof(int));
-    signal(SIGPIPE, SIG_IGN);
-
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, "/dev/sfdroid_head", sizeof(addr.sun_path)-1);
-
-    if(connect(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
-    {
-        ALOGE("error connecting to renderer: %s", strerror(errno));
-        close(fd);
-        return -1;
-    }
-
-    return fd;
-}
-
-struct buffer_info_t {
-    char layer_name[HWC_LAYER_NAME_MAX_LENGTH];
-    int width;
-    int height;
-    int stride;
-    int format;
-};
-
-int send_native_handle(int fd, const native_handle_t *handle, char *layer_name, int width, int height, int stride, int format)
-{
-    struct msghdr socket_message;
-    struct iovec io_vector[1];
-    struct cmsghdr *control_message = NULL;
-    unsigned int buffer_size = sizeof(struct buffer_info_t) + sizeof(native_handle_t) + sizeof(int)*(handle->numFds + handle->numInts);
-    unsigned int handle_size = sizeof(native_handle_t) + sizeof(int)*(handle->numFds + handle->numInts);
-    char message_buffer[buffer_size];
-    char ancillary_buffer[CMSG_SPACE(sizeof(int) * handle->numFds)];
-    struct buffer_info_t binfo;
-
-    strncpy(binfo.layer_name, layer_name, HWC_LAYER_NAME_MAX_LENGTH);
-    binfo.width = width;
-    binfo.height = height;
-    binfo.stride = stride;
-    binfo.format = format;
-
-    memcpy(message_buffer, &binfo, sizeof(struct buffer_info_t));
-    memcpy(message_buffer + sizeof(struct buffer_info_t), handle, handle_size);
-
-    io_vector[0].iov_base = message_buffer;
-    io_vector[0].iov_len = buffer_size;
-
-    memset(&socket_message, 0, sizeof(struct msghdr));
-    socket_message.msg_iov = io_vector;
-    socket_message.msg_iovlen = 1;
-
-    memset(ancillary_buffer, 0, CMSG_SPACE(sizeof(int) * handle->numFds));
-
-    socket_message.msg_control = ancillary_buffer;
-    socket_message.msg_controllen = CMSG_SPACE(sizeof(int) * handle->numFds);
-
-    control_message = CMSG_FIRSTHDR(&socket_message);
-    control_message->cmsg_len = socket_message.msg_controllen;
-    control_message->cmsg_level = SOL_SOCKET;
-    control_message->cmsg_type = SCM_RIGHTS;
-
-    for(int i=0;i<handle->numFds;i++)
-    {
-        ((int*)CMSG_DATA(control_message))[i] = handle->data[i];
-    }
-
-    return sendmsg(fd, &socket_message, MSG_WAITALL);
-}
-
-static int hwc_set_layer_name(hwc_composer_device_1_t *dev, char *layer_name)
-{
-        memcpy(&stored_layer_name[0], layer_name, HWC_LAYER_NAME_MAX_LENGTH);
-        return 0;
-}
-
-static int hwc_share_buffer(hwc_composer_device_1_t *dev, buffer_handle_t buffer, int width, int height, int stride, int format)
-{
-    struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
-
-    if(ctx->fd < 0)
-    {
-        ctx->fd = connect_to_renderer();
-    }
-
-    if(ctx->fd >= 0)
-    {
-       char num_fdsints[2];
-       char syncbyte = 0xAA;
-       num_fdsints[0] = buffer->numFds;
-       num_fdsints[1] = buffer->numInts;
-
-       if(send(ctx->fd, &syncbyte, 1, 0) < 0) {
-           ALOGE("failed to send sync byte");
-           close(ctx->fd);
-           ctx->fd = -1;
-           return -1;
-       }
-
-       if(send(ctx->fd, &num_fdsints[0], 2, MSG_WAITALL) != 2) {
-           ALOGE("failed to send fds or ints count");
-           close(ctx->fd);
-           ctx->fd = -1;
-           return -1;
-       }
-
-       if(send_native_handle(ctx->fd, buffer, &stored_layer_name[0], width, height, stride, format) < 0) {
-           ALOGE("failed to send native handle");
-           close(ctx->fd);
-           ctx->fd = -1;
-           return -1;
-       }
-
-      // till the frame has been processed
-      if(recv(ctx->fd, &syncbyte, 1, 0) != 1) {
-          ALOGE("failed to wait for frame processed");
-          close(ctx->fd);
-          ctx->fd = -1;
-          return -1;
-      }
-   }
-
-   return 0;
 }
 
 static int hwc_set(hwc_composer_device_1_t *dev,
@@ -564,8 +421,6 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
 
         dev->device.prepare = hwc_prepare;
         dev->device.set = hwc_set;
-        dev->device.share_buffer = hwc_share_buffer;
-        dev->device.set_layer_name = hwc_set_layer_name;
         dev->device.blank = hwc_blank;
         dev->device.query = hwc_query;
         dev->device.eventControl = hwc_eventControl;
