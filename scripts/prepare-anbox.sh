@@ -98,3 +98,6 @@ echo "/run/display run/display" >> $EXTRA_BIND_MOUNTS
 echo "/dev/fb0"
 echo "/dev/fb0 dev/fb0" >> $EXTRA_BIND_MOUNTS
 
+echo "/dev/uinput"
+echo "/dev/uinput dev/uinput" >> $EXTRA_BIND_MOUNTS
+
