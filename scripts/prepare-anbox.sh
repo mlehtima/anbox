@@ -90,3 +90,8 @@ for f in /dev/kgsl*; do
     echo "/dev/$(basename $f) dev/$(basename $f)" >> $EXTRA_BIND_MOUNTS
 done
 
+echo "Setting up wayland socket"
+
+echo "/run/display"
+echo "/run/display run/display" >> $EXTRA_BIND_MOUNTS
+
