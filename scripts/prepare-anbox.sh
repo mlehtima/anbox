@@ -95,3 +95,6 @@ echo "Setting up wayland socket"
 echo "/run/display"
 echo "/run/display run/display" >> $EXTRA_BIND_MOUNTS
 
+echo "/dev/fb0"
+echo "/dev/fb0 dev/fb0" >> $EXTRA_BIND_MOUNTS
+

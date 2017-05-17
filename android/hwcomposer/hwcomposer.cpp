@@ -302,8 +302,15 @@ uint32_t config, const uint32_t* attributes, int32_t* values) {
         info_initialized = true;
     }
 
-    float xdpi = (720.f * 25.4f) / 72.f;
-    float ydpi = (1280.f * 25.4f) / 142.f;
+    if (int(info.width) <= 0 || int(info.height) <= 0) {
+        // the driver doesn't return that information
+        // default to 160 dpi
+        info.width  = ((info.xres * 25.4f)/160.0f + 0.5f);
+        info.height = ((info.yres * 25.4f)/160.0f + 0.5f);
+    }
+
+    float xdpi = ((float)info.xres * 25.4f) / (float)info.width;
+    float ydpi = ((float)info.yres * 25.4f) / (float)info.height;
 
     hwc_context_t* ctx = (hwc_context_t*)(dev);
 
@@ -325,10 +332,10 @@ uint32_t config, const uint32_t* attributes, int32_t* values) {
             values[i] = 16666666;
             break;
         case HWC_DISPLAY_WIDTH:
-            values[i] = 720;//info.xres;
+            values[i] = info.xres;
             break;
         case HWC_DISPLAY_HEIGHT:
-            values[i] = 1280;//info.yres;
+            values[i] = info.yres;
             break;
         case HWC_DISPLAY_DPI_X:
             values[i] = (int32_t) (xdpi * 1000.0);
