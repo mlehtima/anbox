@@ -1,4 +1,5 @@
 include_directories(
+  ${AUDIORESOURCE_INCLUDE_DIRS}
   ${Boost_INCLUDE_DIRS}
   ${GLIB_INCLUDE_DIRS}
   ${GIO_INCLUDE_DIRS}
@@ -269,6 +270,8 @@ set(SOURCES
     anbox/platform/sdl/keycode_converter.h
     anbox/platform/sdl/platform.cpp
     anbox/platform/sdl/platform.h
+    anbox/platform/sailfish/platform.cpp
+    anbox/platform/sailfish/platform.h
     anbox/platform/sdl/sdl_wrapper.h
     anbox/platform/sdl/window.cpp
     anbox/platform/sdl/window.h
@@ -374,6 +377,10 @@ endif (NOT USE_HEADLESS)
 
 add_library(anbox-core STATIC ${SOURCES} ${GRAPHICS_SOURCES})
 target_link_libraries(anbox-core
+  ${AUDIORESOURCE_LDFLAGS}
+  ${AUDIORESOURCE_LIBRARIES}
+  ${GLIB_LDFLAGS}
+  ${GLIB_LIBRARIES}
   ${Boost_LDFLAGS}
   ${Boost_LIBRARIES}
   ${SDL2_LDFLAGS}
