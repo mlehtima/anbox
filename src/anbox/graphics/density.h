@@ -35,9 +35,6 @@ enum class DensityType {
   xhigh = 360,
   xxhigh = 480,
 };
-
-DensityType current_density();
-int dp_to_pixel(unsigned int dp);
 }  // namespace graphics
 }  // namespace anbox
 
