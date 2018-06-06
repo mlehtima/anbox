@@ -127,7 +127,6 @@ set(SOURCES
     anbox/graphics/buffer_queue.cpp
     anbox/graphics/buffered_io_stream.cpp
     anbox/graphics/gl_renderer_server.cpp
-    anbox/graphics/density.cpp
     anbox/graphics/density.h
     anbox/graphics/rect.cpp
     anbox/graphics/layer_composer.cpp
