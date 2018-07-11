@@ -208,7 +208,6 @@ set(SOURCES
     anbox/graphics/buffered_io_stream.h
     anbox/graphics/buffer_queue.cpp
     anbox/graphics/buffer_queue.h
-    anbox/graphics/density.cpp
     anbox/graphics/density.h
     anbox/graphics/gl_extensions.h
     anbox/graphics/layer_composer.cpp
